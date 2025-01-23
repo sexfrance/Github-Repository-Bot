@@ -1,0 +1,14 @@
+[ BOT ]
+Token = "" # Your bot token
+Owner = [1163361459636543511] # Your Discord ID multiple is optional, you can add as many as you want: [0, 0, 0, 0]
+
+[ SERVER ]
+Channel = 1324054087775551518 # Channel ID
+GitHub_Username = "sexfrance" # GitHub Username
+
+[ Embed ]
+title = "New Repository Created!"
+color = "#3498db"
+thumbnail = "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+footer_text = "GitHub Repository Bot"
+show_timestamp = true
