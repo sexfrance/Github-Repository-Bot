@@ -80,7 +80,7 @@
 
 ### 📹 Embed Preview
 
-Sex
+![Sex](https://i.imgur.com/MubOyuL.png)
 
 ---
 
