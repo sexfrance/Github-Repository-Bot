@@ -89,6 +89,7 @@
 - This project is for educational purposes only
 - Use responsibly and in accordance with Discord's terms of service
 - Respect GitHub's API rate limits
+- This script was made by copilot 🤓
 
 ---
 

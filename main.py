@@ -63,7 +63,6 @@ async def fetch_repos():
     url = f"https://api.github.com/users/{GITHUB_USERNAME}/repos"
     headers = {
         "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "GitHub-Repository-Bot"
     }
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
