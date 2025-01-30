@@ -10,7 +10,7 @@ from datetime import UTC  # Add this import
 CONFIG_FILE = "config.toml"
 
 class RepoState:
-    def __init__(self, repo):
+    def __init__(self, repo, message_id=None):
         self.id = repo['id']
         self.stars = repo['stargazers_count']
         self.forks = repo['forks_count']
@@ -18,6 +18,7 @@ class RepoState:
         self.description = repo.get('description', '')
         self.last_update = repo['updated_at']
         self.name = repo['name']
+        self.message_id = message_id  # Store Discord message ID
 
     def __str__(self):
         return f"Repo {self.name}: {self.stars}⭐ {self.forks}🍴 {self.watchers}👀"
@@ -87,13 +88,40 @@ def has_repo_changed(repo, old_state):
         return True
     return False
 
+def create_embed(repo, is_update=False):
+    """Create embed for repository"""
+    description = (
+        f"**{repo['name']}**\n"
+        f"{repo.get('description', 'No description provided.')}\n"
+        f"\n━━━━━━━━━━━━━━━\n"
+        f"📊 **Stats**\n"
+        f"⭐ Stars: `{repo['stargazers_count']}`\n"
+        f"🍴 Forks: `{repo['forks_count']}`\n"
+        f"👀 Watchers: `{repo['watchers_count']}`\n"
+        f"\n━━━━━━━━━━━━━━━\n"
+        f"🔗 **Quick Links**\n"
+        f"• [View Repository]({repo['html_url']})\n"
+        f"• [Download ZIP]({repo['html_url']}/archive/refs/heads/main.zip)"
+    )
+
+    title = "Repository Updated!" if is_update else "New Repository Created!"
+    embed = discord.Embed(
+        title=config["Embed"].get("title", f"🎉 {title}"),
+        description=description,
+        url=repo["html_url"],
+        color=hex_to_int(config["Embed"].get("color", "#3498db"))
+    )
+    
+    # ... rest of embed creation code ...
+    return embed
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     channel = bot.get_channel(CHANNEL_ID)
-    
     current_time = datetime.datetime.now(UTC)
-
+    
+    # Load initial state
     initial_repos = await fetch_repos()
     if initial_repos:
         for repo in initial_repos:
@@ -106,153 +134,47 @@ async def on_ready():
                 if repos:
                     for repo in repos:
                         repo_id = repo['id']
-                        repo_created = datetime.datetime.strptime(
-                            repo['created_at'], 
-                            "%Y-%m-%dT%H:%M:%SZ"
-                        ).replace(tzinfo=UTC)
+                        old_state = repo_states.get(repo_id)
                         
-                        if repo_created > current_time:
-                            description = (
-                                f"**{repo['name']}**\n"
-                                f"{repo.get('description', 'No description provided.')}\n"
-                                f"\n━━━━━━━━━━━━━━━\n"
-                                f"📊 **Stats**\n"
-                                f"⭐ Stars: `{repo['stargazers_count']}`\n"
-                                f"🍴 Forks: `{repo['forks_count']}`\n"
-                                f"👀 Watchers: `{repo['watchers_count']}`\n"
-                                f"\n━━━━━━━━━━━━━━━\n"
-                                f"🔗 **Quick Links**\n"
-                                f"• [View Repository]({repo['html_url']})\n"
-                                f"• [Download ZIP]({repo['html_url']}/archive/refs/heads/main.zip)"
-                            )
-
-                            embed = discord.Embed(
-                                title=config["Embed"].get("title", "🎉 New Repository Created!"),
-                                description=description,
-                                url=repo["html_url"],
-                                color=hex_to_int(config["Embed"].get("color", "#3498db"))
-                            )
-                            
-                            timestamp = int(datetime.datetime.now(UTC).timestamp())
-                            preview_url = f"https://opengraph.githubassets.com/{timestamp}/{GITHUB_USERNAME}/{repo['name']}"
-                            embed.set_image(url=preview_url)
-                            
-                            if config["Embed"].get("thumbnail"):
-                                embed.set_thumbnail(url=config["Embed"]["thumbnail"])
-                            
-                            embed.add_field(
-                                name="📝 Language", 
-                                value=f"`{repo.get('language', 'Not specified')}`", 
-                                inline=True
-                            )
-                            
-                            license_info = repo.get("license")
-                            license_name = "No license"
-                            if isinstance(license_info, dict):
-                                license_name = license_info.get("name", "No license")
-                            embed.add_field(
-                                name="📜 License", 
-                                value=f"`{license_name}`", 
-                                inline=True
-                            )
-                            
-                            embed.add_field(
-                                name="🔒 Visibility",
-                                value=f"`{repo.get('visibility', 'Unknown').capitalize()}`",
-                                inline=True
-                            )
-                            
-                            created_at = datetime.datetime.strptime(repo["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                            embed.add_field(
-                                name="📅 Created",
-                                value=f"`{created_at.strftime('%Y-%m-%d %H:%M')} UTC`",
-                                inline=True
-                            )
-                            
-                            footer_text = config["Embed"].get("footer_text", "GitHub Repository Bot")
-                            embed.set_footer(
-                                text=f"{footer_text} • {GITHUB_USERNAME}",
-                                icon_url=config["Embed"].get("thumbnail")
-                            )
-                            
-                            if config["Embed"].get("show_timestamp", True):
-                                embed.timestamp = datetime.datetime.now(UTC)
-
-                            if channel:
-                                await channel.send(embed=embed)
-                                repo_states[repo_id] = RepoState(repo)
+                        if old_state:
+                            if has_repo_changed(repo, old_state):
+                                print(f"Updating {repo['name']}")
+                                embed = create_embed(repo, is_update=True)
+                                
+                                try:
+                                    # Try to edit existing message
+                                    if old_state.message_id:
+                                        try:
+                                            message = await channel.fetch_message(old_state.message_id)
+                                            await message.edit(embed=embed)
+                                            print(f"Edited message for {repo['name']}")
+                                            continue
+                                        except discord.NotFound:
+                                            pass  # Message was deleted, create new one
+                                    
+                                    # Create new message if can't edit
+                                    message = await channel.send(embed=embed)
+                                    old_state.message_id = message.id
+                                    print(f"Created new message for {repo['name']} update")
+                                except Exception as e:
+                                    print(f"Error handling message: {e}")
+                                
+                                repo_states[repo_id] = RepoState(repo, old_state.message_id)
                         
-                        elif repo_id in repo_states and has_repo_changed(repo, repo_states[repo_id]):
-                            description = (
-                                f"**{repo['name']}**\n"
-                                f"{repo.get('description', 'No description provided.')}\n"
-                                f"\n━━━━━━━━━━━━━━━\n"
-                                f"📊 **Stats**\n"
-                                f"⭐ Stars: `{repo['stargazers_count']}`\n"
-                                f"🍴 Forks: `{repo['forks_count']}`\n"
-                                f"👀 Watchers: `{repo['watchers_count']}`\n"
-                                f"\n━━━━━━━━━━━━━━━\n"
-                                f"🔗 **Quick Links**\n"
-                                f"• [View Repository]({repo['html_url']})\n"
-                                f"• [Download ZIP]({repo['html_url']}/archive/refs/heads/main.zip)"
-                            )
-
-                            embed = discord.Embed(
-                                title=config["Embed"].get("title", "🎉 New Repository Created!"),
-                                description=description,
-                                url=repo["html_url"],
-                                color=hex_to_int(config["Embed"].get("color", "#3498db"))
-                            )
+                        else:
+                            # New repository
+                            repo_created = datetime.datetime.strptime(
+                                repo['created_at'], 
+                                "%Y-%m-%dT%H:%M:%SZ"
+                            ).replace(tzinfo=UTC)
                             
-                            timestamp = int(datetime.datetime.now(UTC).timestamp())
-                            preview_url = f"https://opengraph.githubassets.com/{timestamp}/{GITHUB_USERNAME}/{repo['name']}"
-                            embed.set_image(url=preview_url)
-                            
-                            if config["Embed"].get("thumbnail"):
-                                embed.set_thumbnail(url=config["Embed"]["thumbnail"])
-                            
-                            embed.add_field(
-                                name="📝 Language", 
-                                value=f"`{repo.get('language', 'Not specified')}`", 
-                                inline=True
-                            )
-                            
-                            license_info = repo.get("license")
-                            license_name = "No license"
-                            if isinstance(license_info, dict):
-                                license_name = license_info.get("name", "No license")
-                            embed.add_field(
-                                name="📜 License", 
-                                value=f"`{license_name}`", 
-                                inline=True
-                            )
-                            
-                            embed.add_field(
-                                name="🔒 Visibility",
-                                value=f"`{repo.get('visibility', 'Unknown').capitalize()}`",
-                                inline=True
-                            )
-                            
-                            created_at = datetime.datetime.strptime(repo["created_at"], "%Y-%m-%dT%H:%M:%SZ")
-                            embed.add_field(
-                                name="📅 Created",
-                                value=f"`{created_at.strftime('%Y-%m-%d %H:%M')} UTC`",
-                                inline=True
-                            )
-                            
-                            footer_text = config["Embed"].get("footer_text", "GitHub Repository Bot")
-                            embed.set_footer(
-                                text=f"{footer_text} • {GITHUB_USERNAME}",
-                                icon_url=config["Embed"].get("thumbnail")
-                            )
-                            
-                            if config["Embed"].get("show_timestamp", True):
-                                embed.timestamp = datetime.datetime.now(UTC)
-
-                            if channel:
-                                await channel.send(embed=embed)
-                            repo_states[repo_id] = RepoState(repo)
-                    
+                            if repo_created > current_time:
+                                print(f"New repository found: {repo['name']}")
+                                embed = create_embed(repo, is_update=False)
+                                message = await channel.send(embed=embed)
+                                repo_states[repo_id] = RepoState(repo, message.id)
+                                print(f"Created message for new repo: {repo['name']}")
+                
             except Exception as e:
                 print(f"Error during repository check: {e}")
             
